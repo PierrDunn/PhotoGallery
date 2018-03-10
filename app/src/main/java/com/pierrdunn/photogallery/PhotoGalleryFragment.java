@@ -1,8 +1,11 @@
 package com.pierrdunn.photogallery;
 
+import android.graphics.Bitmap;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
@@ -43,7 +46,17 @@ public class PhotoGalleryFragment extends Fragment {
         new FetchItemsTask().execute();
 
         //Фоновый процесс
-        mThumbnailDowloader = new ThumbnailDowloader<>();
+        Handler responseHandler = new Handler();
+        mThumbnailDowloader = new ThumbnailDowloader<>(responseHandler);
+        mThumbnailDowloader.setThumbnailDownloadListener(
+                new ThumbnailDowloader.ThumbnailDownloadListener<PhotoHolder>() {
+                    @Override
+                    public void onThumbnailDowloaded(PhotoHolder target, Bitmap thumbnail) {
+                        Drawable drawable = new BitmapDrawable(getResources(), thumbnail);
+                        target.bindDrawable(drawable);
+                    }
+                }
+        );
         mThumbnailDowloader.start();
         mThumbnailDowloader.getLooper();
         Log.i(TAG, "Background thread started");
@@ -63,6 +76,12 @@ public class PhotoGalleryFragment extends Fragment {
         setupAdapter();
 
         return v;
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        mThumbnailDowloader.clearQueue();
     }
 
     @Override
