@@ -1,5 +1,6 @@
 package com.pierrdunn.photogallery;
 
+import android.graphics.drawable.Drawable;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
@@ -11,8 +12,10 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 
-import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Created by pierrdunn on 09.03.18.
@@ -23,6 +26,8 @@ public class PhotoGalleryFragment extends Fragment {
     private static final String TAG = "PhotoGalleryFragment";
 
     private RecyclerView mPhotoRecyclerView;
+    private List<GalleryItem> mItems = new ArrayList<>();
+    private ThumbnailDowloader<PhotoHolder> mThumbnailDowloader;
 
     public static PhotoGalleryFragment newInstance() {
         return new PhotoGalleryFragment();
@@ -36,6 +41,12 @@ public class PhotoGalleryFragment extends Fragment {
         //execute октивизирует AsyncTask который запускается
         //в фоновом режиме
         new FetchItemsTask().execute();
+
+        //Фоновый процесс
+        mThumbnailDowloader = new ThumbnailDowloader<>();
+        mThumbnailDowloader.start();
+        mThumbnailDowloader.getLooper();
+        Log.i(TAG, "Background thread started");
     }
 
     @Nullable
@@ -49,23 +60,82 @@ public class PhotoGalleryFragment extends Fragment {
         mPhotoRecyclerView.setLayoutManager(new GridLayoutManager(getActivity(),
                 3));
 
+        setupAdapter();
+
         return v;
     }
 
-    //Реализация AsyncTask для работы в фоновом потоке
-    private class FetchItemsTask extends AsyncTask<Void,Void,Void>{
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        mThumbnailDowloader.quit();
+        Log.i(TAG, "Background thread destroyed");
+    }
+
+    private void setupAdapter(){
+        if(isAdded())
+            mPhotoRecyclerView.setAdapter(new PhotoAdapter(mItems));
+    }
+
+    //Уровень представления
+    private class PhotoHolder extends RecyclerView.ViewHolder{
+        private ImageView mItemImageView;
+
+        public PhotoHolder(View itemView) {
+            super(itemView);
+
+            mItemImageView = (ImageView) itemView.findViewById(R.id.item_image_view);
+        }
+
+        public void bindDrawable(Drawable drawable){
+            mItemImageView.setImageDrawable(drawable);
+        }
+    }
+
+    private class PhotoAdapter extends RecyclerView.Adapter<PhotoHolder>{
+
+        private List<GalleryItem> mGalleryItems;
+
+        public PhotoAdapter(List<GalleryItem> galleryItems){
+            mGalleryItems = galleryItems;
+        }
+
+        @NonNull
+        @Override
+        public PhotoHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            LayoutInflater inflater = LayoutInflater.from(getActivity());
+            View view = inflater.inflate(R.layout.gallery_item, parent,
+                    false);
+            return new PhotoHolder(view);
+        }
 
         @Override
-        protected Void doInBackground(Void... params) {
-            try {
-                String result = new FlickrFetchr()
-                        .getUrlString("https://www.bignerdranch.com");
-                Log.i(TAG, "Fetched contents of URL: " + result);
-            } catch (IOException ioe){
-                Log.e(TAG, "Failed to fetch URL: ", ioe);
-            }
+        public void onBindViewHolder(@NonNull PhotoHolder holder, int position) {
+            GalleryItem galleryItem = mGalleryItems.get(position);
+            //Временное изображение
+            Drawable placeholder = getResources().getDrawable(R.drawable.close);
+            holder.bindDrawable(placeholder);
+            mThumbnailDowloader.queueThumbnail(holder, galleryItem.getUrl());
+        }
 
-            return null;
+        @Override
+        public int getItemCount() {
+            return mGalleryItems.size();
+        }
+    }
+
+    //Реализация AsyncTask для работы в фоновом потоке
+    private class FetchItemsTask extends AsyncTask<Void,Void,List<GalleryItem>>{
+
+        @Override
+        protected List<GalleryItem> doInBackground(Void... params) {
+            return new FlickrFetchr().fetchItems();
+        }
+
+        @Override
+        protected void onPostExecute(List<GalleryItem> items) {
+            mItems = items;
+            setupAdapter();
         }
     }
 }
