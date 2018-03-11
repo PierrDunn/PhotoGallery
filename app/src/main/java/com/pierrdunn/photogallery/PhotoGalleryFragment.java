@@ -13,9 +13,13 @@ import android.support.v7.widget.GridLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
+import android.support.v7.widget.SearchView;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -41,9 +45,12 @@ public class PhotoGalleryFragment extends Fragment {
         super.onCreate(savedInstanceState);
         //Удержание фрагмента
         setRetainInstance(true);
+        //подключение меню
+        setHasOptionsMenu(true);
         //execute октивизирует AsyncTask который запускается
         //в фоновом режиме
-        new FetchItemsTask().execute();
+        //new FetchItemsTask().execute();
+        updateItems();
 
         //Фоновый процесс
         Handler responseHandler = new Handler();
@@ -89,6 +96,61 @@ public class PhotoGalleryFragment extends Fragment {
         super.onDestroy();
         mThumbnailDowloader.quit();
         Log.i(TAG, "Background thread destroyed");
+    }
+
+    //подключение поиска
+    //если не находит ресурс, вызвать Build/Clean Project
+    @Override
+    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+        super.onCreateOptionsMenu(menu, inflater);
+        inflater.inflate(R.menu.fragment_photo_gallery, menu);
+
+        MenuItem searchItem = menu.findItem(R.id.menu_item_search);
+        final SearchView searchView = (SearchView) searchItem.getActionView();
+
+        searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
+            @Override
+            public boolean onQueryTextSubmit(String query) {
+                Log.d(TAG, "QueryTextSubmit: " + query);
+                //Сохранение запроса
+                QueryPreferences.setStoredQuery(getActivity(), query);
+                updateItems();
+                return true;
+            }
+
+            @Override
+            public boolean onQueryTextChange(String newText) {
+                Log.d(TAG, "onQueryTextChange: " + newText);
+                return false;
+            }
+        });
+
+        //заполнение поиска текстом
+        searchView.setOnSearchClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String query =QueryPreferences.getStoredQuery(getActivity());
+                searchView.setQuery(query, false);
+            }
+        });
+    }
+
+    //стирание сохраненного запроса
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        switch (item.getItemId()){
+            case R.id.menu_item_clear:
+                QueryPreferences.setStoredQuery(getActivity(), null);
+                updateItems();
+                return true;
+            default:
+                return super.onOptionsItemSelected(item);
+        }
+    }
+
+    private void updateItems(){
+        String query = QueryPreferences.getStoredQuery(getActivity());
+        new FetchItemsTask(query).execute();
     }
 
     private void setupAdapter(){
@@ -146,9 +208,17 @@ public class PhotoGalleryFragment extends Fragment {
     //Реализация AsyncTask для работы в фоновом потоке
     private class FetchItemsTask extends AsyncTask<Void,Void,List<GalleryItem>>{
 
+        private String mQuery;
+        public FetchItemsTask(String query){
+            mQuery = query;
+        }
+
         @Override
         protected List<GalleryItem> doInBackground(Void... params) {
-            return new FlickrFetchr().fetchItems();
+            if (mQuery == null)
+                return new FlickrFetchr().fetchRecentPhotos();
+            else
+                return  new FlickrFetchr().searchPhotos(mQuery);
         }
 
         @Override
